@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AgriSignal — Campaign Command Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0b0f1a;--surface:#131826;--surface2:#1a2035;--border:#232b42;
+      --text:#e8eaf0;--muted:#8892a4;--green:#22c55e;--red:#ef4444;
+      --orange:#f97316;--yellow:#eab308;--blue:#3b82f6;--accent:#6366f1;
+    }
+    body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+    /* ── TOP NAV ── */
+    .topnav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .topnav .brand{display:flex;align-items:center;gap:10px}
+    .topnav .brand .logo{width:28px;height:28px;background:linear-gradient(135deg,#22c55e,#6366f1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+    .topnav .brand h1{font-size:18px;font-weight:700;letter-spacing:-0.3px}
+    .topnav .brand span{font-size:11px;color:var(--muted);font-weight:400;margin-left:4px}
+    .topnav .live{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--green);font-weight:600}
+    .live-dot{width:8px;height:8px;background:var(--green);border-radius:50%;animation:pulse 1.5s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
+    .topnav .stats-bar{display:flex;gap:24px}
+    .stat-pill{text-align:center}
+    .stat-pill .val{font-size:20px;font-weight:800;line-height:1}
+    .stat-pill .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+    .stat-pill.red .val{color:var(--red)}
+    .stat-pill.orange .val{color:var(--orange)}
+    .stat-pill.blue .val{color:var(--blue)}
+
+    /* ── MAIN LAYOUT ── */
+    .main{display:grid;grid-template-columns:340px 1fr 380px;flex:1;overflow:hidden}
+
+    /* ── LEFT PANEL — Risk Queue ── */
+    .left-panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .panel-header{padding:16px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .panel-header h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+    .filter-btns{display:flex;gap:6px}
+    .filter-btn{padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11px;cursor:pointer;transition:.15s}
+    .filter-btn.active,.filter-btn:hover{border-color:var(--accent);color:var(--text);background:rgba(99,102,241,.15)}
+    .risk-list{overflow-y:auto;flex:1;padding:8px}
+    .risk-card{padding:14px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);margin-bottom:8px;cursor:pointer;transition:.15s;position:relative}
+    .risk-card:hover,.risk-card.active{border-color:var(--accent);box-shadow:0 0 0 1px rgba(99,102,241,.3)}
+    .risk-card .top-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+    .risk-card .district-name{font-weight:700;font-size:14px}
+    .urgency-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.5px}
+    .badge-CRITICAL{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+    .badge-HIGH{background:rgba(249,115,22,.15);color:var(--orange);border:1px solid rgba(249,115,22,.3)}
+    .badge-MEDIUM{background:rgba(234,179,8,.15);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
+    .badge-LOW{background:rgba(59,130,246,.15);color:var(--blue);border:1px solid rgba(59,130,246,.3)}
+    .risk-card .meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+    .risk-card .metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
+    .metric-box{background:var(--surface);border-radius:6px;padding:6px 8px;text-align:center}
+    .metric-box .mv{font-size:14px;font-weight:700}
+    .metric-box .ml{font-size:9px;color:var(--muted);text-transform:uppercase}
+    .score-bar{margin-top:8px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+    .score-fill{height:100%;border-radius:2px;transition:.3s}
+
+    /* ── CENTER — Map ── */
+    .center-panel{position:relative;overflow:hidden}
+    #map{width:100%;height:100%}
+    .map-overlay{position:absolute;top:16px;left:16px;background:rgba(11,15,26,.85);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:10px;padding:12px 16px;z-index:1000;font-size:12px;color:var(--muted)}
+    .map-overlay strong{color:var(--text);display:block;margin-bottom:4px}
+    .legend-item{display:flex;align-items:center;gap:6px;margin-top:4px}
+    .legend-dot{width:10px;height:10px;border-radius:50%}
+
+    /* ── RIGHT PANEL — Campaign Preview ── */
+    .right-panel{background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+    .right-panel .panel-header{flex-shrink:0}
+    .right-content{flex:1;overflow-y:auto;padding:16px}
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);text-align:center;gap:12px}
+    .empty-icon{font-size:48px;opacity:.3}
+    .empty-state p{font-size:13px;max-width:200px;line-height:1.5}
+    .generate-btn{margin:12px 16px 0;padding:12px;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;border-radius:10px;color:white;font-weight:700;font-size:14px;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:8px}
+    .generate-btn:hover{opacity:.9;transform:translateY(-1px)}
+    .generate-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+    .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* Campaign output sections */
+    .section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+    .section-title .icon{font-size:14px}
+    .campaign-block{margin-bottom:16px}
+
+    /* WhatsApp bubble */
+    .wa-bubble{background:#1a2f23;border:1px solid rgba(34,197,94,.2);border-radius:12px;padding:14px;font-size:13px;line-height:1.7;white-space:pre-wrap;color:#d1fae5}
+
+    /* SMS block */
+    .sms-block{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text)}
+    .char-count{font-size:10px;color:var(--muted);text-align:right;margin-top:4px}
+
+    /* Voice script */
+    .voice-block{background:var(--surface2);border:1px solid rgba(99,102,241,.2);border-radius:10px;padding:12px;font-size:12px;line-height:1.7;color:#c7d2fe;white-space:pre-wrap}
+
+    /* Image */
+    .ai-image{width:100%;border-radius:10px;border:1px solid var(--border);min-height:120px;background:var(--surface2);display:block;object-fit:cover}
+    .img-caption{font-size:10px;color:var(--muted);margin-top:4px;font-style:italic}
+
+    /* Retailer alert */
+    .retailer-alert{background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.25);border-radius:10px;padding:12px;font-size:12px;color:#fed7aa;line-height:1.6}
+    .blocked-msg{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);border-radius:10px;padding:14px;color:#fca5a5;font-size:13px;line-height:1.6;margin:16px}
+
+    /* Channel breakdown */
+    .channel-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px}
+    .channel-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+    .channel-card .cv{font-size:18px;font-weight:800;margin-bottom:2px}
+    .channel-card .cl{font-size:10px;color:var(--muted);text-transform:uppercase}
+    .channel-card.wa .cv{color:var(--green)}
+    .channel-card.sms .cv{color:var(--blue)}
+    .channel-card.ivr .cv{color:var(--accent)}
+
+    /* Toast Notification */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { background: var(--surface); border: 1px solid var(--accent); color: var(--text); padding: 12px 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 13px; transform: translateX(120%); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    .toast.show { transform: translateX(0); }
+
+    /* Skeleton Loading */
+    .skeleton-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 8px; animation: pulse-bg 1.5s infinite; }
+    .skeleton-line { height: 12px; background: rgba(255,255,255,0.05); border-radius: 4px; margin-bottom: 8px; }
+    .skeleton-line.w-50 { width: 50%; } .skeleton-line.w-75 { width: 75%; } .skeleton-line.w-100 { width: 100%; }
+    @keyframes pulse-bg { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Typewriter Effect */
+    .typewriter-text { overflow: hidden; white-space: pre-wrap; border-right: 2px solid var(--accent); animation: typing 1.5s steps(40, end) forwards, blink-caret .75s step-end 3; max-width: 100%; width: 0; }
+    @keyframes typing { from { width: 0; } to { width: 100%; border-color: transparent; } }
+    @keyframes blink-caret { from, to { border-color: transparent; } 50% { border-color: var(--accent); } }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+    /* Mobile Responsiveness */
+    @media (max-width: 1024px) {
+      .main { grid-template-columns: 300px 1fr; grid-template-rows: 1fr 1fr; }
+      .right-panel { grid-column: span 2; border-left: none; border-top: 1px solid var(--border); }
+    }
+    @media (max-width: 768px) {
+      .main { grid-template-columns: 1fr; display: flex; flex-direction: column; overflow-y: auto; }
+      .left-panel, .center-panel, .right-panel { flex: none; height: auto; min-height: 400px; }
+      .stats-bar { display: none; } /* Hide stats bar on mobile to save space */
+    }
+  </style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav class="topnav">
+  <div class="brand">
+    <div class="logo">🌾</div>
+    <h1>AgriSignal <span>by Syngenta</span></h1>
+  </div>
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-pill red"><div class="val" id="statCritical">—</div><div class="lbl">Critical Zones</div></div>
+    <div class="stat-pill orange"><div class="val" id="statHigh">—</div><div class="lbl">High Zones</div></div>
+    <div class="stat-pill blue"><div class="val" id="statRisk">—</div><div class="lbl">At-Risk Farmers</div></div>
+    <div class="stat-pill"><div class="val" id="statWA" style="color:var(--green)">—</div><div class="lbl">WhatsApp</div></div>
+    <div class="stat-pill"><div class="val" id="statSMS" style="color:var(--blue)">—</div><div class="lbl">SMS</div></div>
+  </div>
+  <div class="live"><div class="live-dot"></div> LIVE — <span id="liveTime">—</span></div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT: Risk Queue -->
+  <div class="left-panel">
+    <div class="panel-header">
+      <h2>🎯 Risk Queue</h2>
+      <div class="filter-btns">
+        <button class="filter-btn active" onclick="filterZones('ALL',this)">All</button>
+        <button class="filter-btn" onclick="filterZones('CRITICAL',this)" style="color:var(--red)">Critical</button>
+        <button class="filter-btn" onclick="filterZones('HIGH',this)" style="color:var(--orange)">High</button>
+      </div>
+    </div>
+    <div class="risk-list" id="riskList">
+      <div style="text-align:center;padding:40px;color:var(--muted)">Loading risk data...</div>
+    </div>
+  </div>
+
+  <!-- CENTER: Map -->
+  <div class="center-panel">
+    <div id="map"></div>
+    <div class="map-overlay">
+      <strong>Biological Urgency Map</strong>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> Critical</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div> High</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#eab308"></div> Medium</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Low</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Campaign Preview -->
+  <div class="right-panel">
+    <div class="panel-header">
+      <h2>📡 Campaign Generator</h2>
+    </div>
+
+    <div class="right-content" id="rightContent">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">📋</div>
+        <p>Select a district from the Risk Queue to preview and generate a campaign.</p>
+      </div>
+    </div>
+
+    <button class="generate-btn" id="generateBtn" onclick="generateCampaign()" disabled>
+      <span>⚡ Generate Multi-Channel Campaign</span>
+    </button>
+  </div>
+
+</div>
+
+<script>
+  let allZones = [];
+  let activeFilter = 'ALL';
+  let selectedZone = null;
+
+  const URGENCY_COLOR = { CRITICAL:'#ef4444', HIGH:'#f97316', MEDIUM:'#eab308', LOW:'#3b82f6' };
+
+  // ── Init Map ──────────────────────────────────────────────────────────────
+  const map = L.map('map', { zoomControl: true, preferCanvas: true })
+    .setView([22.5, 80.0], 5);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:19
+  }).addTo(map);
+
+  let mapMarkers = [];
+
+  function drawMap(zones) {
+    mapMarkers.forEach(m => map.removeLayer(m));
+    mapMarkers = [];
+    zones.forEach(z => {
+      const color  = URGENCY_COLOR[z.urgency];
+      const radius = 6 + (z.priority_score / 100) * 14;
+      const marker = L.circleMarker([z.lat, z.lon], {
+        radius, color, fillColor: color, fillOpacity: 0.75, weight: 1.5
+      }).addTo(map);
+      marker.bindTooltip(
+        `<b>${z.district}, ${z.state}</b><br>
+         ${z.urgency} · Score ${z.priority_score}<br>
+         ${z.crop} · ${z.pest}<br>
+         ${z.farmers_atrisk} farmers at risk`,
+        { className:'leaflet-tooltip' }
+      );
+      marker.on('click', () => selectZone(z));
+      mapMarkers.push(marker);
+    });
+  }
+
+  // ── Animated Counter ──────────────────────────────────────────────────────
+  function animateValue(obj, start, end, duration, formatStr = false) {
+    let startTimestamp = null;
+    const step = (timestamp) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      let current = Math.floor(progress * (end - start) + start);
+      if (formatStr) {
+        obj.innerHTML = (current / 1000).toFixed(1) + 'K';
+      } else {
+        obj.innerHTML = current;
+      }
+      if (progress < 1) {
+        window.requestAnimationFrame(step);
+      } else {
+        if (formatStr) obj.innerHTML = (end / 1000).toFixed(1) + 'K';
+        else obj.innerHTML = end;
+      }
+    };
+    window.requestAnimationFrame(step);
+  }
+
+  // ── Stats Bar ─────────────────────────────────────────────────────────────
+  async function loadStats() {
+    const r = await fetch('/api/stats'); const d = await r.json();
+    animateValue(document.getElementById('statCritical'), 0, d.critical_districts, 1000);
+    animateValue(document.getElementById('statHigh'), 0, d.high_districts, 1000);
+    animateValue(document.getElementById('statRisk'), 0, d.farmers_at_risk, 1000, true);
+    animateValue(document.getElementById('statWA'), 0, d.whatsapp_reach, 1000, true);
+    animateValue(document.getElementById('statSMS'), 0, d.sms_reach, 1000, true);
+  }
+
+  // ── Risk Queue ────────────────────────────────────────────────────────────
+  async function loadRiskZones() {
+    const r = await fetch('/api/risk-zones?limit=60'); allZones = await r.json();
+    renderRiskList(allZones);
+    drawMap(allZones);
+  }
+
+  function renderRiskList(zones) {
+    const el = document.getElementById('riskList');
+    if (!zones.length) { el.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted)">No zones found.</div>'; return; }
+    el.innerHTML = zones.map(z => {
+      const barColor = URGENCY_COLOR[z.urgency];
+      const marginStr = z.confidence_margin ? ` ±${z.confidence_margin}` : '';
+      const wxStr = z.weather.error ? `<span style="color:var(--red)">🌡 Weather API Error (502)</span>` : `🌡 ${z.weather.temp}°C ${z.weather.humidity}% RH`;
+      return `
+      <div class="risk-card ${z === selectedZone ? 'active' : ''}" onclick="selectZone(${JSON.stringify(z).replace(/"/g,'&quot;')})">
+        <div class="top-row">
+          <div class="district-name">${z.district} <span style="color:var(--muted);font-weight:400;font-size:12px">${z.state}</span></div>
+          <span class="urgency-badge badge-${z.urgency}">${z.urgency} <span style="font-size:8px;opacity:0.8">${marginStr}</span></span>
+        </div>
+        <div class="meta">🌾 ${z.crop} · ${z.growth_stage} · ${wxStr}</div>
+        <div class="metrics">
+          <div class="metric-box"><div class="mv" style="color:${barColor}">${z.farmers_atrisk}</div><div class="ml">At Risk</div></div>
+          <div class="metric-box"><div class="mv" style="color:var(--green)">${z.channels.whatsapp}</div><div class="ml">WhatsApp</div></div>
+          <div class="metric-box"><div class="mv" style="color:var(--blue)">${z.channels.sms}</div><div class="ml">SMS</div></div>
+        </div>
+        <div class="score-bar"><div class="score-fill" style="width:${z.priority_score}%;background:${barColor}"></div></div>
+      </div>`;
+    }).join('');
+  }
+
+  function filterZones(f, btn) {
+    activeFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filtered = f === 'ALL' ? allZones : allZones.filter(z => z.urgency === f);
+    renderRiskList(filtered);
+    drawMap(filtered);
+  }
+
+  // ── Select a Zone ─────────────────────────────────────────────────────────
+  function selectZone(z) {
+    selectedZone = z;
+    document.getElementById('generateBtn').disabled = false;
+    document.querySelectorAll('.risk-card').forEach(c => c.classList.remove('active'));
+    renderRiskList(activeFilter === 'ALL' ? allZones : allZones.filter(x => x.urgency === activeFilter));
+
+    map.flyTo([z.lat, z.lon], 9, {animate:true, duration:.8});
+
+    const right = document.getElementById('rightContent');
+    const color  = URGENCY_COLOR[z.urgency];
+    const bd     = z.score_breakdown || {};
+    const fmt    = z.format_receptivity || {};
+    const marginStr = z.confidence_margin ? ` ±${z.confidence_margin}` : '';
+    const wxStr = z.weather.error ? `<span style="color:var(--red)">🌡 Weather API Error (502)</span>` : `🌡 ${z.weather.temp}°C ${z.weather.humidity}% RH`;
+    
+    right.innerHTML = `
+      <div style="border:1px solid ${color}33;border-radius:10px;padding:14px;background:${color}0d;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <div style="font-size:18px;font-weight:800">${z.district}</div>
+            <div style="color:var(--muted);font-size:12px">${z.state} · ${z.crop} · <strong style="color:${color}">${z.growth_stage}</strong></div>
+          </div>
+          <span class="urgency-badge badge-${z.urgency}">Score: <span id="scoreVal">0</span>${marginStr}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:10px">
+          <div>🐛 <strong>${z.pest}</strong></div>
+          <div>💊 <strong>${z.sku}</strong></div>
+          <div>${wxStr}</div>
+          <div>📅 ${z.days_to_harvest} days to harvest</div>
+          <div>🗣 ${z.dominant_language}</div>
+          <div>📦 ${z.inventory.units} units (${z.inventory.sufficient ? '✅ Sufficient' : '⚠️ Low Stock'})</div>
+        </div>
+
+        <!-- Score Breakdown -->
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Priority Score Breakdown</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
+          <div style="background:var(--surface);border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:13px;font-weight:800;color:var(--red)">${bd.stage_urgency ?? '—'}</div>
+            <div style="font-size:9px;color:var(--muted)">Stage (40%)</div>
+          </div>
+          <div style="background:var(--surface);border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:13px;font-weight:800;color:var(--blue)">${bd.weather_risk ?? '—'}</div>
+            <div style="font-size:9px;color:var(--muted)">Weather (30%)</div>
+          </div>
+          <div style="background:var(--surface);border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:13px;font-weight:800;color:var(--green)">${bd.engagement_hist ?? '—'}</div>
+            <div style="font-size:9px;color:var(--muted)">Engagement (20%)</div>
+          </div>
+          <div style="background:var(--surface);border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:13px;font-weight:800;color:var(--accent)">${bd.inventory ?? '—'}</div>
+            <div style="font-size:9px;color:var(--muted)">Inventory (10%)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Timing + Format Receptivity -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px">
+        <div style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">⏰ Optimal Send Window (from historical data)</div>
+        <div style="color:var(--text);font-weight:500">${z.optimal_send_time}</div>
+        <div style="color:var(--muted);margin-top:4px">Best channel: <strong style="color:var(--green)">${fmt.primary_channel}</strong> · Fallback: ${fmt.secondary_channel}</div>
+        <div style="color:var(--muted);margin-top:2px">Historical open rate: <strong>${fmt.dataset_open_rate}</strong> · Click rate: <strong>${fmt.dataset_click_rate}</strong></div>
+      </div>
+
+      <div class="channel-grid">
+        <div class="channel-card wa"><div class="cv">${z.channels.whatsapp}</div><div class="cl">📱 WhatsApp</div></div>
+        <div class="channel-card sms"><div class="cv">${z.channels.sms}</div><div class="cl">💬 SMS</div></div>
+        <div class="channel-card ivr"><div class="cv">${z.channels.voice}</div><div class="cl">📞 Voice IVR</div></div>
+      </div>
+
+      <div id="campaignOutput"></div>
+    `;
+    
+    // Animate score counter for the selected zone
+    setTimeout(() => {
+        const sv = document.getElementById('scoreVal');
+        if(sv) animateValue(sv, 0, z.priority_score, 800);
+    }, 50);
+  }
+
+  // ── Generate Campaign ─────────────────────────────────────────────────────
+  async function generateCampaign() {
+    if (!selectedZone) return;
+    const btn = document.getElementById('generateBtn');
+    btn.innerHTML = '<div class="spinner"></div> Generating...';
+    btn.disabled = true;
+
+    const out = document.getElementById('campaignOutput');
+    out.innerHTML = `
+      <div class="skeleton-card"><div class="skeleton-line w-50"></div><div class="skeleton-line w-75"></div><div class="skeleton-line w-100"></div></div>
+      <div class="skeleton-card"><div class="skeleton-line w-50"></div><div class="skeleton-line w-100"></div><div class="skeleton-line w-75"></div></div>
+    `;
+
+    try {
+      const res  = await fetch('/api/generate-campaign', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ district: selectedZone.district })
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        out.innerHTML = `<div class="blocked-msg">❌ <strong>Error ${res.status}</strong><br>${errData.detail || 'Server error. Check terminal for details.'}</div>`;
+        btn.innerHTML = '⚡ Generate Multi-Channel Campaign';
+        btn.disabled = false;
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.blocked) {
+        out.innerHTML = `<div class="blocked-msg">🚫 <strong>Campaign Blocked</strong><br>${data.reason}</div>`;
+        btn.innerHTML = '⚡ Generate Multi-Channel Campaign';
+        btn.disabled = false;
+        return;
+      }
+
+      const c = data.campaign;
+      const waLink = `https://wa.me/?text=${encodeURIComponent(c.whatsapp_text)}`;
+      out.innerHTML = `
+        <!-- WhatsApp -->
+        <div class="campaign-block">
+          <div class="section-title">
+            <div><span class="icon">📱</span> WhatsApp Message</div>
+            <a href="${waLink}" target="_blank" style="background:#25D366;color:white;text-decoration:none;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:bold;margin-left:auto;">
+              SEND ON WHATSAPP
+            </a>
+          </div>
+          <div class="wa-bubble typewriter-text">${c.whatsapp_text}</div>
+        </div>
+
+        <!-- AI Image -->
+        <div class="campaign-block">
+          <div class="section-title"><span class="icon">🖼</span> AI Campaign Visual</div>
+          <div id="imgLoader" style="background:var(--surface);border-radius:8px;padding:30px;text-align:center;animation:pulse 1.5s infinite">
+            <div style="color:var(--muted);font-size:13px">⏳ Generating AI image...</div>
+            <div style="margin-top:8px;height:4px;background:var(--border);border-radius:4px;overflow:hidden">
+              <div style="height:100%;width:40%;background:var(--accent);border-radius:4px;animation:shimmer 1.5s infinite"></div>
+            </div>
+          </div>
+          <img class="ai-image" id="aiCampaignImg" src="${c.image_url}" alt="AI Campaign Visual" style="display:none"
+               onload="this.style.display='block';document.getElementById('imgLoader').style.display='none'; if(window.imgTimeout) clearTimeout(window.imgTimeout);"
+               onerror="this.onerror=null; this.src='https://loremflickr.com/900/450/india,agriculture,farm?lock=${Math.floor(Math.random()*1000)}';">
+          <div class="img-caption">Prompt: ${c.image_prompt || '—'}</div>
+        </div>
+
+        <!-- SMS -->
+        <div class="campaign-block">
+          <div class="section-title"><span class="icon">💬</span> SMS — Feature Phone (160 chars)</div>
+          <div class="sms-block typewriter-text" id="smsText">${c.sms_text}</div>
+          <div class="char-count">${(c.sms_text||'').length} / 160 chars ${(c.sms_text||'').length <= 160 ? '✅' : '⚠️ Over limit'}</div>
+        </div>
+
+        <!-- Voice IVR -->
+        <div class="campaign-block">
+          <div class="section-title">
+            <div><span class="icon">📞</span> Voice / IVR Script (Low-Literacy)</div>
+            <button onclick="playVoiceScript('${encodeURIComponent(c.voice_script)}', '${selectedZone.dominant_language}')" style="background:var(--accent);color:white;border:none;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:4px">
+              ▶️ PLAY AUDIO
+            </button>
+          </div>
+          <div class="voice-block typewriter-text">${c.voice_script}</div>
+        </div>
+
+        <!-- Send Recommendation -->
+        <div class="campaign-block">
+          <div class="section-title"><span class="icon">⏰</span> AI Timing Recommendation</div>
+          <div style="background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);border-radius:8px;padding:10px;font-size:12px;color:#c7d2fe">${c.send_recommendation || '—'}</div>
+        </div>
+
+        <!-- Retailer Alert -->
+        <div class="campaign-block">
+          <div class="section-title"><span class="icon">🏪</span> Retailer Restock Alert</div>
+          <div class="retailer-alert">${c.retailer_alert}</div>
+        </div>
+      `;
+
+      // Timeout safety removed to allow high-quality AI images to finish generating.
+
+      showToast(`Campaign triggered for ${selectedZone.district}!`);
+    } catch(e) {
+      document.getElementById('campaignOutput').innerHTML = `
+        <div class="blocked-msg">❌ Error: ${e.message}. Make sure the server is running.</div>`;
+    } finally {
+      btn.innerHTML = '⚡ Generate Multi-Channel Campaign';
+      btn.disabled = false;
+    }
+  }
+
+  // ── Toast Notification ────────────────────────────────────────────────────
+  function showToast(message) {
+    const container = document.getElementById('toastContainer') || (() => {
+      const c = document.createElement('div');
+      c.id = 'toastContainer';
+      c.className = 'toast-container';
+      document.body.appendChild(c);
+      return c;
+    })();
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `🚀 ${message}`;
+    container.appendChild(toast);
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // ── Live Clock ────────────────────────────────────────────────────────────
+  function updateClock() {
+    document.getElementById('liveTime').textContent = new Date().toLocaleTimeString('en-IN');
+  }
+  setInterval(updateClock, 1000); updateClock();
+
+  // Text-to-Speech for Voice Script
+  window.playVoiceScript = function(textUri, lang) {
+    const text = decodeURIComponent(textUri);
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Map dominant languages to browser TTS lang codes
+    const langMap = {
+      'Hindi': 'hi-IN',
+      'Gujarati': 'gu-IN',
+      'Marathi': 'mr-IN',
+      'Tamil': 'ta-IN',
+      'Telugu': 'te-IN',
+      'Kannada': 'kn-IN',
+      'Punjabi': 'pa-IN',
+      'Bengali': 'bn-IN'
+    };
+    
+    utterance.lang = langMap[lang] || 'hi-IN';
+    utterance.rate = 0.9; // Slightly slower for IVR feel
+    utterance.pitch = 1.0;
+    
+    // Cancel any ongoing speech before starting new one
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // ── Boot ──────────────────────────────────────────────────────────────────
+  (async () => {
+    await Promise.all([loadStats(), loadRiskZones()]);
+  })();
+</script>
+</body>
+</html>

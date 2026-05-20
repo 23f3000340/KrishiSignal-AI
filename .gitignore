@@ -1,0 +1,14 @@
+# Ignored files
+.env
+kisanpulse/.env
+__pycache__/
+kisanpulse/__pycache__/
+*.pyc
+venv/
+.venv/
+.idea/
+.vscode/
+*.log
+static/cached_campaign.jpg
+kisanpulse/static/cached_campaign.jpg
+*.csv
