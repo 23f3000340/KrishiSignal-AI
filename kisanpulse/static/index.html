@@ -36,7 +36,7 @@
     .stat-pill.blue .val{color:var(--blue)}
 
     /* ── MAIN LAYOUT ── */
-    .main{display:grid;grid-template-columns:340px 1fr 380px;flex:1;overflow:hidden}
+    .main{display:grid;grid-template-columns:340px 1fr 480px;flex:1;overflow:hidden}
 
     /* ── LEFT PANEL — Risk Queue ── */
     .left-panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
@@ -147,6 +147,127 @@
       .left-panel, .center-panel, .right-panel { flex: none; height: auto; min-height: 400px; }
       .stats-bar { display: none; } /* Hide stats bar on mobile to save space */
     }
+
+    /* ── ROBOCALL SIMULATION OVERLAY ── */
+    .call-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.85);
+      z-index: 10000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(8px);
+    }
+    .call-card {
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 20px;
+      width: 340px;
+      padding: 30px 20px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      position: relative;
+    }
+    .call-avatar {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-size: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      box-shadow: 0 0 20px rgba(99,102,241,0.4);
+      animation: ripple 2s infinite;
+    }
+    @keyframes ripple {
+      0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+      70% { box-shadow: 0 0 0 15px rgba(99,102,241,0); }
+      100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    }
+    .call-status {
+      font-size: 13px;
+      color: var(--orange);
+      font-weight: bold;
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+    .call-phone {
+      font-size: 20px;
+      font-weight: 800;
+      color: white;
+      margin-bottom: 5px;
+    }
+    .call-district {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 25px;
+    }
+    .call-wave {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+      height: 40px;
+      align-items: center;
+      margin-bottom: 30px;
+      transition: opacity 0.3s;
+    }
+    .call-wave span {
+      width: 4px;
+      height: 15px;
+      background: var(--accent);
+      border-radius: 4px;
+      animation: wave-bar 1.2s ease-in-out infinite;
+    }
+    .call-wave span:nth-child(2) { animation-delay: 0.2s; }
+    .call-wave span:nth-child(3) { animation-delay: 0.4s; }
+    .call-wave span:nth-child(4) { animation-delay: 0.6s; }
+    .call-wave span:nth-child(5) { animation-delay: 0.8s; }
+    @keyframes wave-bar {
+      0%, 100% { height: 10px; }
+      50% { height: 35px; }
+    }
+    .call-actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 10px;
+    }
+    .hangup-btn {
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 55px;
+      height: 55px;
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(239,68,68,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: 0.2s;
+    }
+    .hangup-btn:hover {
+      transform: scale(1.1);
+      background: #dc2626;
+    }
+    .call-script-preview {
+      font-size: 11px;
+      color: #94a3b8;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 20px;
+      max-height: 80px;
+      overflow-y: auto;
+      text-align: left;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -225,8 +346,16 @@
   const URGENCY_COLOR = { CRITICAL:'#ef4444', HIGH:'#f97316', MEDIUM:'#eab308', LOW:'#3b82f6' };
 
   // ── Init Map ──────────────────────────────────────────────────────────────
-  const map = L.map('map', { zoomControl: true, preferCanvas: true })
-    .setView([22.5, 80.0], 5);
+  // Limit bounds to India (approximate coordinates) to keep map focused
+  const indiaBounds = [[6.0, 68.0], [37.5, 97.5]];
+  const map = L.map('map', { 
+    zoomControl: true, 
+    preferCanvas: true,
+    maxBounds: indiaBounds,
+    maxBoundsViscosity: 1.0,
+    minZoom: 4,
+    maxZoom: 12
+  }).setView([20.5937, 78.9629], 5);
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:19
@@ -444,17 +573,22 @@
       }
 
       const c = data.campaign;
-      const waLink = `https://wa.me/?text=${encodeURIComponent(c.whatsapp_text)}`;
       out.innerHTML = `
         <!-- WhatsApp -->
         <div class="campaign-block">
           <div class="section-title">
             <div><span class="icon">📱</span> WhatsApp Message</div>
-            <a href="${waLink}" target="_blank" style="background:#25D366;color:white;text-decoration:none;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:bold;margin-left:auto;">
-              SEND ON WHATSAPP
-            </a>
           </div>
           <div class="wa-bubble typewriter-text">${c.whatsapp_text}</div>
+          
+          <textarea id="waPhone" placeholder="Enter WhatsApp numbers (comma or space separated, e.g. 9876543210, 8877665544)" style="background:var(--surface);border:1px solid var(--border);color:white;border-radius:6px;font-size:11px;padding:8px;width:100%;height:45px;resize:none;outline:none;margin-top:8px;box-sizing:border-box;font-family:inherit;"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+            <span style="font-size:10px;color:var(--muted)">Supports multiple numbers</span>
+            <button onclick="sendLiveWhatsApp('${encodeURIComponent(c.whatsapp_text)}', '${c.raw_image_url || ''}')" style="background:#25D366;color:white;border:none;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;gap:4px;">
+              💬 SEND LIVE
+            </button>
+          </div>
+          <div id="waRecipientsArea"></div>
         </div>
 
         <!-- AI Image -->
@@ -474,20 +608,42 @@
 
         <!-- SMS -->
         <div class="campaign-block">
-          <div class="section-title"><span class="icon">💬</span> SMS — Feature Phone (160 chars)</div>
+          <div class="section-title">
+            <div><span class="icon">💬</span> SMS — Feature Phone (160 chars)</div>
+            <button onclick="copyToClipboard('${encodeURIComponent(c.sms_text)}', 'SMS copied to clipboard!')" style="background:var(--border);color:white;border:none;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-weight:bold;margin-left:auto;display:flex;align-items:center;gap:4px">
+              📋 COPY
+            </button>
+          </div>
           <div class="sms-block typewriter-text" id="smsText">${c.sms_text}</div>
-          <div class="char-count">${(c.sms_text||'').length} / 160 chars ${(c.sms_text||'').length <= 160 ? '✅' : '⚠️ Over limit'}</div>
+          <div class="char-count" style="margin-bottom:8px;">${(c.sms_text||'').length} / 160 chars ${(c.sms_text||'').length <= 160 ? '✅' : '⚠️ Over limit'}</div>
+          
+          <textarea id="smsPhone" placeholder="Enter SMS numbers (comma or space separated, e.g. 9876543210, 8877665544)" style="background:var(--surface);border:1px solid var(--border);color:white;border-radius:6px;font-size:11px;padding:8px;width:100%;height:45px;resize:none;outline:none;box-sizing:border-box;font-family:inherit;"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+            <span style="font-size:10px;color:var(--muted)">Supports bulk SMS dispatch</span>
+            <button onclick="sendBulkSMS('${encodeURIComponent(c.sms_text)}')" style="background:var(--accent);color:white;border:none;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;">
+              💬 DISPATCH SMS
+            </button>
+          </div>
+          <div id="smsRecipientsArea"></div>
         </div>
 
         <!-- Voice IVR -->
         <div class="campaign-block">
           <div class="section-title">
             <div><span class="icon">📞</span> Voice / IVR Script (Low-Literacy)</div>
-            <button onclick="playVoiceScript('${encodeURIComponent(c.voice_script)}', '${selectedZone.dominant_language}')" style="background:var(--accent);color:white;border:none;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:4px">
-              ▶️ PLAY AUDIO
+            <button onclick="copyToClipboard('${encodeURIComponent(c.voice_script)}', 'Voice script copied to clipboard!')" style="background:var(--border);color:white;border:none;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-weight:bold;margin-left:auto;display:flex;align-items:center;gap:4px">
+              📋 COPY
             </button>
           </div>
           <div class="voice-block typewriter-text">${c.voice_script}</div>
+          
+          <textarea id="voicePhone" placeholder="Enter phone numbers (comma or space separated, e.g. 9876543210, 8877665544)" style="background:var(--surface);border:1px solid var(--border);color:white;border-radius:6px;font-size:11px;padding:8px;width:100%;height:45px;resize:none;outline:none;box-sizing:border-box;font-family:inherit;"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
+            <span style="font-size:10px;color:var(--muted)">Simulates outbound call sequential queue</span>
+            <button onclick="simulateRobocall('${encodeURIComponent(c.voice_script)}', '${selectedZone.dominant_language}')" style="background:var(--accent);color:white;border:none;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;gap:4px">
+              📞 LAUNCH ROBOCALL
+            </button>
+          </div>
         </div>
 
         <!-- Send Recommendation -->
@@ -498,12 +654,15 @@
 
         <!-- Retailer Alert -->
         <div class="campaign-block">
-          <div class="section-title"><span class="icon">🏪</span> Retailer Restock Alert</div>
+          <div class="section-title">
+            <div><span class="icon">🏪</span> Retailer Restock Alert</div>
+            <button onclick="copyToClipboard('${encodeURIComponent(c.retailer_alert)}', 'Retailer alert copied!')" style="background:var(--border);color:white;border:none;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-weight:bold;margin-left:auto;display:flex;align-items:center;gap:4px">
+              📋 COPY
+            </button>
+          </div>
           <div class="retailer-alert">${c.retailer_alert}</div>
         </div>
       `;
-
-      // Timeout safety removed to allow high-quality AI images to finish generating.
 
       showToast(`Campaign triggered for ${selectedZone.district}!`);
     } catch(e) {
@@ -534,6 +693,520 @@
       setTimeout(() => toast.remove(), 300);
     }, 4000);
   }
+  window.showToast = showToast;
+
+  // ── Twilio Error Modal ────────────────────────────────────────────────────
+  window.showTwilioErrorModal = function(title, errorMsg) {
+    let modal = document.getElementById('twilioErrorModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'twilioErrorModal';
+      modal.style = `
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(10, 15, 30, 0.85);
+        backdrop-filter: blur(8px);
+        display: flex; justify-content: center; align-items: center;
+        z-index: 10000;
+        opacity: 0; transition: opacity 0.3s ease;
+      `;
+      document.body.appendChild(modal);
+    }
+    
+    let isWhatsApp = errorMsg.toLowerCase().includes('whatsapp');
+    let isUnverified = errorMsg.includes('21608') || errorMsg.toLowerCase().includes('not verified') || errorMsg.toLowerCase().includes('unverified');
+    
+    let helpSteps = '';
+    if (isUnverified) {
+      helpSteps = `
+        <li style="margin-bottom:8px;">1. Log into your <b>Twilio Console</b>.</li>
+        <li style="margin-bottom:8px;">2. Go to <b>Phone Numbers > Manage > Verified Caller IDs</b>.</li>
+        <li style="margin-bottom:8px;">3. Add and verify the phone number you are trying to call/message.</li>
+        <li style="margin-bottom:8px;">4. <i>Alternative:</i> Upgrade your Twilio account by adding $10 credit to remove this limit completely.</li>
+      `;
+    } else if (isWhatsApp) {
+      helpSteps = `
+        <li style="margin-bottom:8px;">1. Make sure your Twilio Sandbox is set up in your Twilio Console under <b>Messaging > Try it out > Send a WhatsApp Message</b>.</li>
+        <li style="margin-bottom:8px;">2. Send the opt-in message (e.g., "join sandbox-word") from your recipient's phone to your Twilio Sandbox number.</li>
+        <li style="margin-bottom:8px;">3. <i>Alternative:</i> Register a business WhatsApp sender profile on your upgraded Twilio account for direct, un-gated bulk sending.</li>
+      `;
+    } else {
+      helpSteps = `
+        <li style="margin-bottom:8px;">1. Double check your <b>TWILIO_ACCOUNT_SID</b>, <b>TWILIO_AUTH_TOKEN</b>, and <b>TWILIO_FROM_NUMBER</b> in your <b>.env</b> file.</li>
+        <li style="margin-bottom:8px;">2. Restart your backend Python server to load the new credentials.</li>
+        <li style="margin-bottom:8px;">3. Ensure you have active credit on your Twilio account.</li>
+      `;
+    }
+
+    modal.innerHTML = `
+      <div style="background: #1e293b; border: 1px solid var(--border); border-radius: 16px; padding: 24px; max-width: 500px; width: 90%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); text-align: left;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
+          <span style="font-size:32px;">⚠️</span>
+          <div>
+            <h3 style="margin:0; font-size:18px; color:var(--red); font-weight:bold;">${title}</h3>
+            <span style="font-size:11px; color:var(--muted);">TWILIO SANDBOX / TRIAL GATEWAY LIMIT</span>
+          </div>
+        </div>
+        <p style="font-size:13px; line-height:1.5; color:#cbd5e1; background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; border-left:4px solid var(--red); font-family:monospace; word-break:break-word; margin-bottom:20px;">
+          ${errorMsg}
+        </p>
+        <h4 style="font-size:12px; font-weight:bold; color:var(--text); margin-bottom:10px;">👉 HOW TO FIX THIS:</h4>
+        <ul style="font-size:12px; color:#cbd5e1; padding-left:20px; line-height:1.6; margin-bottom:24px;">
+          ${helpSteps}
+        </ul>
+        <div style="display:flex; justify-content:flex-end; gap:12px;">
+          <button onclick="document.getElementById('twilioErrorModal').style.opacity='0'; setTimeout(()=>document.getElementById('twilioErrorModal').style.display='none', 300)" style="background:rgba(255,255,255,0.1); border:none; border-radius:8px; color:var(--text); padding:8px 16px; font-size:12px; font-weight:bold; cursor:pointer;">DISMISS</button>
+          <button onclick="window.open('https://console.twilio.com', '_blank')" style="background:var(--accent); border:none; border-radius:8px; color:white; padding:8px 16px; font-size:12px; font-weight:bold; cursor:pointer;">OPEN TWILIO CONSOLE</button>
+        </div>
+      </div>
+    `;
+    
+    modal.style.display = 'flex';
+    setTimeout(() => modal.style.opacity = '1', 50);
+  };
+
+  // ── Clipboard Copy ────────────────────────────────────────────────────────
+  window.copyToClipboard = function(textUri, message) {
+    const text = decodeURIComponent(textUri);
+    navigator.clipboard.writeText(text).then(() => {
+      showToast(message);
+    }).catch(err => {
+      console.error('Failed to copy: ', err);
+    });
+  };
+
+  // ── WhatsApp Single Dispatch Helper ────────────────────────────────────────
+  window.openWhatsAppSingle = function(element, num, textUri) {
+    const text = decodeURIComponent(textUri);
+    const url = `https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+    
+    // Defer visual state disabling to prevent cancelling browser gesture
+    setTimeout(() => {
+      element.style.background = 'var(--border)';
+      element.innerText = '✅ SENT';
+      element.style.pointerEvents = 'none';
+    }, 150);
+  };
+
+  // ── Live WhatsApp Dispatch ────────────────────────────────────────────────
+  window.sendLiveWhatsApp = function(textUri, imageUrl) {
+    const text = decodeURIComponent(textUri);
+    const phoneInput = document.getElementById('waPhone');
+    let phoneVal = phoneInput ? phoneInput.value.trim() : '';
+    const numbers = phoneVal.split(/[,\s\n]+/).map(n => n.replace(/[^\d]/g, '')).filter(n => n.length >= 10).map(n => n.length === 10 ? '91' + n : n);
+    
+    if (numbers.length === 0) {
+      alert('Please enter at least one valid 10-digit phone number!');
+      return;
+    }
+    
+    showToast('💬 Initiating WhatsApp dispatch...');
+    
+    fetch('/api/dispatch/whatsapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone_numbers: numbers,
+        message: text,
+        image_url: imageUrl || null
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'real') {
+        showToast(`🚀 WhatsApp Sent via Twilio: ${data.message}`);
+        // Render success feedback list
+        const container = document.getElementById('waRecipientsArea');
+        if (container) {
+          let listHtml = `
+            <div style="margin-top:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:12px;">
+              <div style="font-size:11px;font-weight:bold;color:var(--green);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px;">
+                ✅ TWILIO WHATSAPP SUCCESS (${numbers.length})
+              </div>
+              <div style="max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
+          `;
+          numbers.forEach((num) => {
+            listHtml += `
+              <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,0.2);padding:5px 8px;border-radius:4px;font-size:11px;">
+                <span style="font-family:monospace;color:#94a3b8;">📞 +${num.slice(0,2)} ${num.slice(2,7)} ${num.slice(7)}</span>
+                <span style="color:var(--green);font-size:10px;font-weight:bold;">🟢 SENT (TWILIO WA)</span>
+              </div>
+            `;
+          });
+          listHtml += `</div></div>`;
+          container.innerHTML = listHtml;
+        }
+      } else if (data.status === 'error') {
+        window.showTwilioErrorModal('WhatsApp Dispatch Failed', data.message);
+        window.triggerFallbackWhatsApp(numbers, text, imageUrl);
+      } else {
+        // Fallback to manual click browser tabs
+        showToast('🔑 Twilio keys missing. Opening manual click-to-chat list...');
+        window.triggerFallbackWhatsApp(numbers, text, imageUrl);
+      }
+    })
+    .catch(err => {
+      console.error('WhatsApp Dispatch Error:', err);
+      showToast('⚠️ Telephony server error. Opening manual click-to-chat list...');
+      window.triggerFallbackWhatsApp(numbers, text, imageUrl);
+    });
+  };
+
+  window.triggerFallbackWhatsApp = function(numbers, text, imageUrl) {
+    const container = document.getElementById('waRecipientsArea');
+    if (!container) return;
+    
+    // Append the public image link so WhatsApp mobile/web automatically renders a rich preview card
+    const fullText = imageUrl ? `${text}\n\n🖼 View Visual: ${imageUrl}` : text;
+    
+    if (numbers.length === 1) {
+      // Direct opening for single number
+      const url = `https://api.whatsapp.com/send?phone=${numbers[0]}&text=${encodeURIComponent(fullText)}`;
+      window.open(url, '_blank');
+      container.innerHTML = '';
+      return;
+    }
+    
+    // Multiple numbers: render clean interactive dispatch list
+    let listHtml = `
+      <div style="margin-top:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:bold;color:var(--muted);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px;">
+          <span>📋 WA RECIPIENT LIST (${numbers.length})</span>
+          <button onclick="bulkOpenWhatsApp(${JSON.stringify(numbers)}, '${encodeURIComponent(fullText)}')" style="background:var(--accent);color:white;border:none;border-radius:4px;font-size:9px;padding:3px 8px;cursor:pointer;font-weight:bold;">🚀 OPEN ALL TABS</button>
+        </div>
+        <div style="max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px;">
+    `;
+    
+    numbers.forEach((num, idx) => {
+      listHtml += `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,0.2);padding:5px 8px;border-radius:4px;font-size:11px;">
+          <span style="font-family:monospace;color:#94a3b8;">📞 +${num.slice(0,2)} ${num.slice(2,7)} ${num.slice(7)}</span>
+          <button onclick="openWhatsAppSingle(this, '${num}', '${encodeURIComponent(fullText)}')" style="background:#25D366;color:white;border:none;border-radius:4px;padding:3px 10px;font-size:10px;font-weight:bold;cursor:pointer;width:75px;text-align:center;">🟢 SEND</button>
+        </div>
+      `;
+    });
+    
+    listHtml += `</div>
+      <div style="font-size:9px;color:var(--muted);margin-top:6px;text-align:center;">⚠️ Note: Enable browser pop-ups if using "Open All Tabs"</div>
+    </div>`;
+    
+    container.innerHTML = listHtml;
+  };
+
+  window.bulkOpenWhatsApp = function(numbers, textUri) {
+    const text = decodeURIComponent(textUri);
+    numbers.forEach((num, idx) => {
+      setTimeout(() => {
+        const url = `https://api.whatsapp.com/send?phone=${num}&text=${encodeURIComponent(text)}`;
+        window.open(url, '_blank');
+      }, idx * 300);
+    });
+  };
+
+  // ── Bulk SMS Dispatch ─────────────────────────────────────────────────────
+  window.sendBulkSMS = function(textUri) {
+    const text = decodeURIComponent(textUri);
+    const phoneInput = document.getElementById('smsPhone');
+    let phoneVal = phoneInput ? phoneInput.value.trim() : '';
+    const numbers = phoneVal.split(/[,\s\n]+/).map(n => n.replace(/[^\d]/g, '')).filter(n => n.length >= 10).map(n => n.length === 10 ? '91' + n : n);
+    
+    if (numbers.length === 0) {
+      alert('Please enter at least one valid 10-digit phone number!');
+      return;
+    }
+    
+    showToast('💬 Initiating SMS dispatch...');
+    
+    fetch('/api/dispatch/sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone_numbers: numbers,
+        message: text
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'real') {
+        showToast(`🚀 Twilio SMS Sent: ${data.message}`);
+        // Render list showing all as sent
+        const container = document.getElementById('smsRecipientsArea');
+        if (container) {
+          let listHtml = `
+            <div style="margin-top:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:12px;">
+              <div style="font-size:11px;font-weight:bold;color:var(--green);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px;">
+                ✅ TWILIO DISPATCH SUCCESSFUL (${numbers.length})
+              </div>
+              <div style="max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;">
+          `;
+          numbers.forEach((num) => {
+            listHtml += `
+              <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,0.2);padding:5px 8px;border-radius:4px;font-size:11px;">
+                <span style="font-family:monospace;color:#94a3b8;">📞 +${num.slice(0,2)} ${num.slice(2,7)} ${num.slice(7)}</span>
+                <span style="color:var(--green);font-size:10px;font-weight:bold;">🟢 SENT (TWILIO)</span>
+              </div>
+            `;
+          });
+          listHtml += `</div></div>`;
+          container.innerHTML = listHtml;
+        }
+      } else if (data.status === 'error') {
+        window.showTwilioErrorModal('SMS Dispatch Failed', data.message);
+        window.triggerFallbackSMS(numbers, text);
+      } else {
+        // Fallback to simulated system SMS links
+        showToast('🔑 Twilio credentials missing. Opening system SMS messenger...');
+        window.triggerFallbackSMS(numbers, text);
+      }
+    })
+    .catch(err => {
+      console.error('SMS Dispatch Error:', err);
+      showToast('⚠️ Connection error. Opening system SMS messenger...');
+      window.triggerFallbackSMS(numbers, text);
+    });
+  };
+
+  // ── SMS Single Dispatch Helper ──────────────────────────────────────────────
+  window.openSMSSingle = function(element, num, textUri) {
+    const text = decodeURIComponent(textUri);
+    const url = `sms:${num}?body=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+    
+    // Defer visual state disabling to prevent cancelling browser gesture
+    setTimeout(() => {
+      element.style.background = 'var(--border)';
+      element.innerText = '✅ SENT';
+      element.style.pointerEvents = 'none';
+    }, 150);
+  };
+
+  window.triggerFallbackSMS = function(numbers, text) {
+    const container = document.getElementById('smsRecipientsArea');
+    if (!container) return;
+    
+    if (numbers.length === 1) {
+      const url = `sms:${numbers[0]}?body=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+      container.innerHTML = '';
+      return;
+    }
+    
+    const bulkUrl = `sms:${numbers.join(',')}?body=${encodeURIComponent(text)}`;
+    let listHtml = `
+      <div style="margin-top:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:bold;color:var(--muted);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px;">
+          <span>💬 SYSTEM SMS DISPATCH (${numbers.length})</span>
+          <a href="${bulkUrl}" style="background:var(--accent);color:white;text-decoration:none;border-radius:4px;font-size:9px;padding:3px 8px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:3px;">🚀 BULK SMS LINK</a>
+        </div>
+        <div style="max-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px;">
+    `;
+    
+    numbers.forEach((num, idx) => {
+      listHtml += `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,0.2);padding:5px 8px;border-radius:4px;font-size:11px;">
+          <span style="font-family:monospace;color:#94a3b8;">📞 +${num.slice(0,2)} ${num.slice(2,7)} ${num.slice(7)}</span>
+          <button onclick="openSMSSingle(this, '${num}', '${encodeURIComponent(text)}')" style="background:var(--accent);color:white;border:none;border-radius:4px;padding:3px 10px;font-size:10px;font-weight:bold;cursor:pointer;width:75px;text-align:center;">🟢 SEND</button>
+        </div>
+      `;
+    });
+    
+    listHtml += `</div></div>`;
+    container.innerHTML = listHtml;
+  };
+
+  // ── Call Simulation Actions ───────────────────────────────────────────────
+  window.simulateRobocall = function(textUri, lang) {
+    const text = decodeURIComponent(textUri);
+    const phoneInput = document.getElementById('voicePhone');
+    let phoneVal = phoneInput ? phoneInput.value.trim() : '';
+    const numbers = phoneVal.split(/[,\s\n]+/).map(n => n.replace(/[^\d]/g, '')).filter(n => n.length >= 10).map(n => n.length === 10 ? '91' + n : n);
+    
+    if (numbers.length === 0) {
+      alert('Please enter at least one valid 10-digit phone number!');
+      return;
+    }
+    
+    showToast('📞 Initiating outbound telephony...');
+    
+    fetch('/api/dispatch/call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone_numbers: numbers,
+        message: text,
+        language: lang
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'real') {
+        showToast(`🚀 Twilio Call Dispatched: ${data.message}`);
+        // Run simulated dial screen in silent progress mode (real call went to phone)
+        window.startVisualSimulatedQueue(numbers, text, lang, false);
+      } else if (data.status === 'simulated') {
+        showToast('🔑 Twilio credentials missing. Running browser simulation...');
+        window.startVisualSimulatedQueue(numbers, text, lang, true);
+      } else {
+        window.showTwilioErrorModal('Outbound Call Failed', data.message);
+        window.startVisualSimulatedQueue(numbers, text, lang, true);
+      }
+    })
+    .catch(err => {
+      console.error('Call Dispatch Error:', err);
+      showToast('⚠️ Connection error. Running browser simulation...');
+      window.startVisualSimulatedQueue(numbers, text, lang, true);
+    });
+  };
+
+  window.startVisualSimulatedQueue = function(numbers, text, lang, speakInBrowser) {
+    let currentCallIndex = 0;
+    
+    window.startSingleCall = function(index) {
+      if (index >= numbers.length) {
+        showToast('All outbound voice calls processed!');
+        return;
+      }
+      
+      const num = numbers[index];
+      const overlay = document.getElementById('callOverlay');
+      const status = document.getElementById('callStatus');
+      const phoneNum = document.getElementById('callPhoneNum');
+      const district = document.getElementById('callDistrictName');
+      const preview = document.getElementById('callScriptPreview');
+      const wave = document.getElementById('callWave');
+      
+      if (!overlay || !status || !phoneNum || !district || !preview || !wave) return;
+      
+      phoneNum.innerText = `+${num.slice(0,2)} ${num.slice(2,7)} ${num.slice(7)}`;
+      district.innerText = `${selectedZone.district.toUpperCase()} · ${selectedZone.state.toUpperCase()} (Call ${index+1}/${numbers.length})`;
+      preview.innerText = text;
+      status.innerText = speakInBrowser ? "DIALING (BROWSER SPEAKER)..." : "DIALING REAL PHONE...";
+      status.style.color = "var(--orange)";
+      wave.style.opacity = "0.3";
+      overlay.style.display = "flex";
+      
+      // Connection simulation time
+      window.callTimeout = setTimeout(() => {
+        status.innerText = speakInBrowser ? "🟢 CONNECTED (SPEAKING...)" : "🟢 CONNECTED (REAL OUTBOUND)";
+        status.style.color = "var(--green)";
+        wave.style.opacity = "1";
+        
+        if (speakInBrowser) {
+          window.playVoiceScriptWithEndCallback(text, lang, () => {
+            status.innerText = "❌ HUNG UP (CALL COMPLETED)";
+            status.style.color = "var(--red)";
+            wave.style.opacity = "0.3";
+            
+            window.callEndTimeout = setTimeout(() => {
+              overlay.style.display = "none";
+              window.startSingleCall(index + 1);
+            }, 1500);
+          });
+        } else {
+          // Real outbound call: simulate status screen duration based on text length (silent timer)
+          const words = text.split(/\s+/).length;
+          const durationMs = Math.max(4000, (words / 2.5) * 1000); // 2.5 words per second
+          
+          window.callEndTimeout = setTimeout(() => {
+            status.innerText = "❌ HUNG UP (CALL COMPLETED)";
+            status.style.color = "var(--red)";
+            wave.style.opacity = "0.3";
+            
+            window.callEndTimeout = setTimeout(() => {
+              overlay.style.display = "none";
+              window.startSingleCall(index + 1);
+            }, 1500);
+          }, durationMs);
+        }
+      }, 1500);
+    };
+    
+    window.startSingleCall(0);
+  };
+
+  window.playVoiceScriptWithEndCallback = function(text, lang, endCallback) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const isLatin = !/[^\x00-\x7F]/.test(text);
+    let targetLang = 'en-IN';
+    
+    if (!isLatin) {
+      const langMap = {
+        'Hindi': 'hi-IN',
+        'Gujarati': 'gu-IN',
+        'Marathi': 'mr-IN',
+        'Tamil': 'ta-IN',
+        'Telugu': 'te-IN',
+        'Kannada': 'kn-IN',
+        'Punjabi': 'pa-IN',
+        'Bengali': 'bn-IN'
+      };
+      targetLang = langMap[lang] || 'hi-IN';
+    }
+    
+    const voices = window.speechSynthesis.getVoices();
+    let bestVoice = voices.find(v => v.lang === targetLang || v.lang.startsWith(targetLang));
+    
+    if (!bestVoice && !isLatin) {
+      if (targetLang === 'mr-IN') {
+        bestVoice = voices.find(v => v.lang.startsWith('hi-IN'));
+      } else if (targetLang === 'gu-IN' || targetLang === 'pa-IN') {
+        bestVoice = voices.find(v => v.lang.startsWith('hi-IN'));
+      }
+    }
+    
+    if (!bestVoice) {
+      bestVoice = voices.find(v => v.lang.startsWith('en-IN')) || 
+                  voices.find(v => v.lang.startsWith('en')) || 
+                  voices[0];
+    }
+    
+    if (bestVoice) {
+      utterance.voice = bestVoice;
+      utterance.lang = bestVoice.lang;
+      console.log(`TTS Voice selected: ${bestVoice.name} (${bestVoice.lang})`);
+    } else {
+      utterance.lang = targetLang;
+    }
+    
+    utterance.rate = 0.85;
+    utterance.pitch = 1.0;
+    
+    utterance.onend = function() {
+      if (endCallback) endCallback();
+    };
+    
+    utterance.onerror = function() {
+      if (endCallback) endCallback();
+    };
+    
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  };
+
+  window.playVoiceScript = function(textUri, lang) {
+    const text = decodeURIComponent(textUri);
+    window.playVoiceScriptWithEndCallback(text, lang, null);
+  };
+
+  window.hangUpCall = function() {
+    window.speechSynthesis.cancel();
+    if (window.callTimeout) clearTimeout(window.callTimeout);
+    if (window.callEndTimeout) clearTimeout(window.callEndTimeout);
+    
+    const status = document.getElementById('callStatus');
+    const wave = document.getElementById('callWave');
+    if (status) {
+      status.innerText = "❌ CALL TERMINATED";
+      status.style.color = "var(--red)";
+    }
+    if (wave) wave.style.opacity = "0.1";
+    
+    setTimeout(() => {
+      const overlay = document.getElementById('callOverlay');
+      if (overlay) overlay.style.display = "none";
+    }, 1000);
+  };
 
   // ── Live Clock ────────────────────────────────────────────────────────────
   function updateClock() {
@@ -541,36 +1214,27 @@
   }
   setInterval(updateClock, 1000); updateClock();
 
-  // Text-to-Speech for Voice Script
-  window.playVoiceScript = function(textUri, lang) {
-    const text = decodeURIComponent(textUri);
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Map dominant languages to browser TTS lang codes
-    const langMap = {
-      'Hindi': 'hi-IN',
-      'Gujarati': 'gu-IN',
-      'Marathi': 'mr-IN',
-      'Tamil': 'ta-IN',
-      'Telugu': 'te-IN',
-      'Kannada': 'kn-IN',
-      'Punjabi': 'pa-IN',
-      'Bengali': 'bn-IN'
-    };
-    
-    utterance.lang = langMap[lang] || 'hi-IN';
-    utterance.rate = 0.9; // Slightly slower for IVR feel
-    utterance.pitch = 1.0;
-    
-    // Cancel any ongoing speech before starting new one
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  };
-
   // ── Boot ──────────────────────────────────────────────────────────────────
   (async () => {
     await Promise.all([loadStats(), loadRiskZones()]);
   })();
 </script>
+  <!-- Call Simulation Overlay -->
+  <div id="callOverlay" class="call-overlay">
+    <div class="call-card">
+      <div class="call-avatar">👨🏽‍🌾</div>
+      <div id="callStatus" class="call-status">OUTGOING CALL...</div>
+      <div id="callPhoneNum" class="call-phone">+91 98765 43210</div>
+      <div id="callDistrictName" class="call-district">MEHSANA · GUJARAT</div>
+      <div id="callScriptPreview" class="call-script-preview"></div>
+      <div class="call-wave" id="callWave">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <div class="call-actions">
+        <button class="hangup-btn" onclick="hangUpCall()">📞</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

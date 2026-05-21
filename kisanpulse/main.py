@@ -188,6 +188,7 @@ Output ONLY the JSON. No explanation, no markdown fences.
                 b64_img = "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=900&h=450&fit=crop&q=80"
                 
         data["image_url"] = b64_img
+        data["raw_image_url"] = pollinations_url
         
         # Enforce SMS length strictly
         sms = data.get("sms_text", "")
@@ -206,6 +207,200 @@ Output ONLY the JSON. No explanation, no markdown fences.
         if "429" in err_msg or "Quota" in err_msg:
             raise HTTPException(status_code=429, detail="Gemini Free Tier limit reached. Please wait 60 seconds before generating the next campaign.")
         raise HTTPException(status_code=500, detail=f"Gemini API error: {err_msg[:300]}")
+
+
+# ── Call Dispatch Endpoint ───────────────────────────────────────────────────
+class CallRequest(BaseModel):
+    phone_numbers: list[str]
+    message: str
+    language: str
+
+@app.post("/api/dispatch/call")
+def dispatch_calls(req: CallRequest):
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+    auth_token  = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+    from_number = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+    
+    if not account_sid or not auth_token or not from_number:
+        return {
+            "status": "simulated",
+            "message": "Twilio credentials missing in .env. Simulating call in browser..."
+        }
+        
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        
+        # Map languages to Twilio's standard Polly TTS voices (avoid premium -Neural suffix for compatibility)
+        # Check if text is Hinglish / Latin script vs Regional script
+        import re
+        import html
+        
+        escaped_message = html.escape(req.message)
+        is_latin = not bool(re.search(r'[^\x00-\x7F]', req.message))
+        
+        if is_latin:
+            lang_code = "en-IN"
+            voice_name = "Polly.Raveena" # Standard Indian English voice
+        else:
+            voice_map = {
+                "Hindi": ("hi-IN", "Polly.Aditi"),
+                "Gujarati": ("gu-IN", "alice"),
+                "Marathi": ("mr-IN", "Polly.Aditi"),  # Fallback to Hindi Devnagari for Marathi
+                "Tamil": ("ta-IN", "alice"),
+                "Telugu": ("te-IN", "alice"),
+                "Kannada": ("kn-IN", "alice"),
+                "Punjabi": ("pa-IN", "alice"),
+                "Bengali": ("bn-IN", "alice")
+            }
+            lang_code, voice_name = voice_map.get(req.language, ("hi-IN", "Polly.Aditi"))
+        
+        voice_attr = f'voice="{voice_name}"' if voice_name != "standard" else ""
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?><Response><Say language="{lang_code}" {voice_attr}>{escaped_message}</Say></Response>"""
+        
+        call_ids = []
+        for phone in req.phone_numbers:
+            # clean number: ensure country code is present
+            clean_phone = phone.replace("+", "").replace(" ", "").strip()
+            if not clean_phone:
+                continue
+            if len(clean_phone) == 10:
+                clean_phone = "+91" + clean_phone
+            elif not clean_phone.startswith("+"):
+                clean_phone = "+" + clean_phone
+                
+            call = client.calls.create(
+                to=clean_phone,
+                from_=from_number,
+                twiml=twiml
+            )
+            call_ids.append(call.sid)
+            
+        return {
+            "status": "real",
+            "message": f"Successfully placed {len(call_ids)} outbound call(s)!",
+            "call_ids": call_ids
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Twilio API Error: {str(e)}"
+        }
+
+
+# ── SMS Dispatch Endpoint ────────────────────────────────────────────────────
+class SmsRequest(BaseModel):
+    phone_numbers: list[str]
+    message: str
+
+@app.post("/api/dispatch/sms")
+def dispatch_sms(req: SmsRequest):
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+    auth_token  = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+    from_number = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+    
+    if not account_sid or not auth_token or not from_number:
+        return {
+            "status": "simulated",
+            "message": "Twilio credentials missing in .env. Simulating SMS dispatch..."
+        }
+        
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        
+        message_sids = []
+        for phone in req.phone_numbers:
+            clean_phone = phone.replace("+", "").replace(" ", "").strip()
+            if not clean_phone:
+                continue
+            if len(clean_phone) == 10:
+                clean_phone = "+91" + clean_phone
+            elif not clean_phone.startswith("+"):
+                clean_phone = "+" + clean_phone
+                
+            msg = client.messages.create(
+                to=clean_phone,
+                from_=from_number,
+                body=req.message
+            )
+            message_sids.append(msg.sid)
+            
+        return {
+            "status": "real",
+            "message": f"Successfully sent {len(message_sids)} SMS via Twilio!",
+            "message_sids": message_sids
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Twilio SMS Error: {str(e)}"
+        }
+
+
+# ── WhatsApp Dispatch Endpoint ───────────────────────────────────────────────
+class WhatsappRequest(BaseModel):
+    phone_numbers: list[str]
+    message: str
+    image_url: str | None = None
+
+@app.post("/api/dispatch/whatsapp")
+def dispatch_whatsapp(req: WhatsappRequest):
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+    auth_token  = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+    
+    # Use dedicated TWILIO_WHATSAPP_FROM_NUMBER if set, otherwise default to Twilio Sandbox number '+14155238886'
+    wa_from_raw = os.environ.get("TWILIO_WHATSAPP_FROM_NUMBER", "").strip()
+    if not wa_from_raw:
+        wa_from_raw = "+14155238886"
+        
+    if not account_sid or not auth_token:
+        return {
+            "status": "simulated",
+            "message": "Twilio credentials missing in .env. Simulating WhatsApp dispatch..."
+        }
+        
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        
+        # Prepend 'whatsapp:' if not already present
+        clean_from = wa_from_raw.replace("whatsapp:", "").strip()
+        wa_from = f"whatsapp:{clean_from}"
+        
+        message_sids = []
+        for phone in req.phone_numbers:
+            clean_phone = phone.replace("+", "").replace(" ", "").strip()
+            if not clean_phone:
+                continue
+            if len(clean_phone) == 10:
+                clean_phone = "+91" + clean_phone
+            elif not clean_phone.startswith("+"):
+                clean_phone = "+" + clean_phone
+                
+            wa_to = f"whatsapp:{clean_phone}"
+            
+            params = {
+                "to": wa_to,
+                "from_": wa_from,
+                "body": req.message
+            }
+            if req.image_url:
+                params["media_url"] = [req.image_url]
+                
+            msg = client.messages.create(**params)
+            message_sids.append(msg.sid)
+            
+        return {
+            "status": "real",
+            "message": f"Successfully sent {len(message_sids)} WhatsApp message(s) via Twilio!",
+            "message_sids": message_sids
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Twilio WhatsApp Error: {str(e)}"
+        }
 
 
 if __name__ == "__main__":

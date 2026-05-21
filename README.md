@@ -1,4 +1,4 @@
-# 🌾 AgriSignal — Context-Aware Crop Protection Command Center
+# 🌾 KrishiSignal AI — Context-Aware Crop Protection Command Center
 ### *Precision Agricultural Risk Scoring & Multi-Channel Campaign Orchestrator*
 **Production Space:** [huggingface.co/spaces/Sarthak5628/agrisignal](https://huggingface.co/spaces/Sarthak5628/agrisignal)
 
@@ -6,7 +6,7 @@
 
 ## 1. System Vision & Architecture
 
-AgriSignal is a precision agricultural marketing command center built for Syngenta. Instead of blasting generic product promotions to all farmers, the system uses data fusion to dynamically coordinate campaigns based on:
+KrishiSignal AI is a precision agricultural marketing command center. Instead of blasting generic product promotions to all farmers, the system uses data fusion to dynamically coordinate campaigns based on:
 1.  **Biological Urgency:** Sowing dates, growth stages, and live humidity/temperature disease vectors.
 2.  **Operational Inventory:** Verified local retailer stock counts.
 3.  **Hardware Profiling:** Routing rich WhatsApp media to smartphones, direct text SMS to keypad phones, and generating Voice IVR scripts for low-literacy segments.
@@ -16,12 +16,13 @@ AgriSignal is a precision agricultural marketing command center built for Syngen
           | 
           | (Rest APIs: /api/risk-zones, /api/stats, /api/generate-campaign)
           v
-[Backend: FastAPI (Python 3.10) - Deployed on Hugging Face Spaces]
+[Backend: FastAPI (Python 3.12) - Running Locally and on HF Spaces]
           |
           +--> [Data Layer: Pandas] (Matches growers to closest retailers via coordinates)
           +--> [Weather Client: HTTPX / Open-Meteo] (Queries live climate conditions)
           +--> [GenAI Engine: Gemini 2.5 Flash] (Generates copy in 6 vernaculars)
           +--> [Visual Engine: Pollinations Turbo] (Downloads, caches, and base64 encodes graphics)
+          +--> [Telecom Engine: Twilio API] (Executes live Call, SMS, and WhatsApp MMS dispatches)
 ```
 
 ---
@@ -61,8 +62,10 @@ To protect marketing spend, consumer campaigns are blocked if local retailer sto
 *   **SMS Route:** Compressed vernacular text limited strictly to **130 characters** to ensure safe delivery across cellular grids.
 *   **Voice IVR Route:** Conversational audio script generated in regional dialect for phone outreach.
 
-### C. Server-Side Image Encoding
-To bypass browser CORS limitations, client-side VPN blocks, and adblockers, the backend server downloads the graphic from Pollinations Turbo, encodes it as a Base64 string, and caches it locally as a fallback.
+### C. Live Telephony Integrations (Twilio API)
+*   **Real Voice Outbound Calls:** Features dynamic accent mapping (Latin/Hinglish routes to Polly Raveena/Aditi voices; Indic scripts route to Alice regional voice) and UTF-8 TwiML XML pre-declaration headers to guarantee Indic letters are pronounced clearly without robotic failure.
+*   **WhatsApp MMS Visual Attachment:** Attaches the public image generation URL to Twilio's WhatsApp payload, delivering the visual directly into the user's phone.
+*   **Interactive Trial Gate Modal:** Frontend intercepts Twilio validation restrictions (unverified trial caller ID) and guides the user on sandbox join parameters and OTP registrations.
 
 ---
 
@@ -72,13 +75,16 @@ To bypass browser CORS limitations, client-side VPN blocks, and adblockers, the 
 *   `GET /api/stats` - Returns aggregated metrics for the top dashboard navigation bar (Critical Zones, High Zones, Total At-Risk Farmers, and Reach by channel).
 *   `GET /api/retailer-alerts` - Returns list of B2B restock alerts.
 *   `POST /api/generate-campaign` - Accepts `{"district": "District Name"}`. Runs the gating check and calls the Gemini/Pollinations pipeline to return the complete campaign package.
+*   `POST /api/dispatch/whatsapp` - Routes bulk WhatsApp campaign messages (including optional AI-generated public image URLs).
+*   `POST /api/dispatch/sms` - Sends bulk SMS advisories using Twilio.
+*   `POST /api/dispatch/call` - Triggers outbound call with custom vernacular speech TwiML responses.
 
 ---
 
 ## 5. Local Setup & Execution
 
 ### Prerequisites:
-*   Python 3.10+ installed.
+*   Python 3.12+ installed.
 
 ### Installation:
 1. Clone the repository and navigate to the project folder:
@@ -97,7 +103,14 @@ To bypass browser CORS limitations, client-side VPN blocks, and adblockers, the 
    ```
 4. Set up environment variables inside `kisanpulse/.env`:
    ```env
+   # Generative AI Key
    GEMINI_API_KEY=your_gemini_api_key_here
+
+   # Twilio Configuration (Required for Live Calling/SMS/WhatsApp)
+   TWILIO_ACCOUNT_SID=your_twilio_sid_here
+   TWILIO_AUTH_TOKEN=your_twilio_token_here
+   TWILIO_FROM_NUMBER=your_twilio_purchased_number_here
+   TWILIO_WHATSAPP_FROM_NUMBER=+14155238886 # Keep +14155238886 for Sandbox testing
    ```
 
 ### Running Locally:
@@ -110,3 +123,4 @@ Open your browser and navigate to:
 ```text
 http://localhost:8000/static/index.html
 ```
+*(Ensure you enable Geo Permissions for India under **Messaging Settings** and **Voice Settings** in your Twilio Console to bypass Trial Account restrictions.)*
